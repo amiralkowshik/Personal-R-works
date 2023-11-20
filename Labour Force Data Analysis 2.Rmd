@@ -1,0 +1,123 @@
+---
+title: "Labour Force Data Analysis 2"
+author: Amir Al Kowshik
+date: October 30, 2023
+output: html_document
+---
+
+
+```{r, message=FALSE}
+library(tidyverse)
+library(modelr)
+library(broom)
+```
+
+
+
+```{r, cache=TRUE}
+LFS <- read_csv("pub0922.csv", guess_max = 10000)
+```
+
+
+
+```{r}
+FTEmployed <- LFS %>%
+  
+  # first, restrict the sample to individuals employed full time
+  filter(LFSSTAT == 1 & FTPTMAIN == 1) %>%
+  
+  # now create the categorical education variable
+  mutate(EduCat = if_else(EDUC == 0, "0 to 8 years", ""),
+         EduCat = if_else(EDUC == 1, "Some high school", EduCat),
+         EduCat = if_else(EDUC == 2, "High school graduate", EduCat),
+         EduCat = if_else(EDUC == 3, "Some postsecondary", EduCat),
+         EduCat = if_else(EDUC == 4, "Postsecondary certificate or diploma", EduCat),
+         EduCat = if_else(EDUC == 5, "Bachelor's degree", EduCat),
+         EduCat = if_else(EDUC == 6, "Above bachelor's degree", EduCat),
+         
+         # and the Wage variable
+         Wage = HRLYEARN/100)
+```
+
+
+
+```{r}
+out <- lm(Wage ~ TENURE + EduCat, data=FTEmployed)
+summary(out)
+```
+
+Coefficients on categorical variables are measured relative to an omitted category. The omitted category is the one that doesn't appear in the table of regression output. For `Educat`, the omitted category is "0 to 8 years" of education.
+
+The coefficient on tenure is `r round(coef(out)[1],2)`, which means that our model predicts that each additional month of job tenure is associated with earning 4 more cents per hour, holding education constant. Our model predicts that High school graduates earn about \$4.21 more than the reference category, holding job tenure constant. Those with a bachelor's degree earn \$15.57 more than the reference category,  holding job tenure constant, and those with more than a bachelor's degree earn \$21.54 more than the reference category. That's not bad! None of this is particularly suprising: it's well-known that wages increase with education.
+
+Let's plot the coefficients on the education variables. To make it easier to read I'm reordering the categories from largest to smallest using `reorder`, and I'm replacing the characters "EduCat" with nothing ("") any time they appear in a value of the variable `term`.
+
+```{r}
+p <- tidy(out, conf.int = TRUE) %>% 
+  filter(term != "TENURE", term != "(Intercept)") %>%
+  mutate(term = gsub("EduCat", "", term)) %>%
+  ggplot(aes(x = reorder(term, estimate), y = estimate, ymin = conf.low, ymax = conf.high))
+p + geom_pointrange() + coord_flip() +
+  labs(x="", y="OLS Estimate", 
+       title = "Estimated education coefficients in LFS data",
+       subtitle = "Full-time workers, September 2022",
+       caption = "Note: Regression model to predict hourly wages, holding job tenure constant")
+```
+
+None of the categorie's confidence intervals include zero. In short, this tells us that we can be confident (i.e., with 95% probabilty) that individuals in each of these categories earn more, on average, than individuals in the reference category.
+
+Now let's create the requested immigration variable, and regress Wage on job tenure, education, and immigration status:
+
+```{r}
+FTEmployed <- FTEmployed %>% 
+  mutate(ImmigCat = if_else(IMMIG == 1, "Immigrant, landed 10 or less years earlier", ""),
+         ImmigCat = if_else(IMMIG == 2, "Immigrant, landed more than 10 years earlier", ImmigCat),
+         ImmigCat = if_else(IMMIG == 3, "Non-immigrant", ImmigCat))
+
+
+out <- lm(Wage ~ TENURE + EduCat + ImmigCat, data=FTEmployed)
+summary(out)
+```
+
+The coefficient on `TENURE` is now 3.986e-02 ... which means $3.986 \times 10^-2 = 0.03985$. Thus the coefficient on `TENURE` has declined slighly from 0.042 to 0.040 ... but it's still telling us that wages increase by approximately 4 cents per month of job tenure. In the previous estimate we only held education constant, i.e., we were implicitly comparing two individuals with the same educational attainment but with different tenure levels. Now we are holding education AND immigration status constant. The associated thought experiment is that we have two individuals who share the same education and immigration status, but one has one additional month of job tenure; our model predicts that she will earn 0.040 cents more.
+
+There's a few different ways that we can visualize regression predctions with multiple predictor variables. Let's start with the regression above, which includes all three variables but without any interactions. What that means is that the wage-tenure slope of the regression line is the same for all education and immigration categories, but the intercepts are different vary across these groups. We'll see that when we do the plot. Let's start by generating predictions on a tenure grid of 100 points between1 and 240, as well as all values of the EduCat and ImmigCat variables; then we'll plot those predictions in a faceted scatter plot.
+
+```{r}
+# generate the predictions on a grid defined by tenure, education, and immigration status
+grid <- FTEmployed %>% 
+  data_grid(TENURE = seq_range(TENURE,100), 
+            EduCat = c("0 to 8 years","Some high school", "High school graduate","Some postsecondary","Postsecondary certificate or diploma","Bachelor's degree","Above bachelor's degree"),
+            ImmigCat = c("Immigrant, landed 10 or less years earlier","Immigrant, landed more than 10 years earlier","Non-immigrant"))
+head(grid, n=10)
+
+predictions <- cbind(grid, 
+                     predict(object = out, newdata = grid, interval = "confidence"))
+head(predictions, n=10)
+
+# plot it!
+p <- predictions %>% 
+  ggplot(mapping = aes(x = TENURE, y = fit, ymin = lwr, ymax = upr, 
+                       color = EduCat, fill = EduCat))
+
+p + geom_line() +
+  
+  geom_ribbon(alpha = 0.2) + 
+  
+  geom_point(data = FTEmployed,
+             mapping = aes(x = TENURE, y = Wage),
+             alpha = 0.01,
+             inherit.aes = FALSE) + 
+  coord_cartesian(ylim = c(10,60)) + 
+  facet_wrap(  ~ ImmigCat, ncol = 2) +
+  theme(legend.position = "top") +
+  labs(title = "Tenure - Wage  Profile in Canada, September 2022",
+       subtitle = "by Education and Immigration Status",
+       caption = "Source: September 2022 LFS",
+       x = "Months of Job Tenure",
+       y = "Hourly Wage",
+       color = "",
+       fill = "")
+```
+
+One thing that becomes clear from this plot, but not from looking direclty at the output of `lm()` is that a lot of observations are piled up at `TENURE=240`! That's just the value that gets recorded for everyone with 20+ years of job tenure. I would be worried that all that data piled up at one point might affect our regression estimates, so a good next step would be to re-estimate the model on the sample with `TENURE<240` only, to make sure that it doesn't change our conclusions at all.

@@ -1,0 +1,121 @@
+---
+title: "VPD Data Analysis"
+author: Amir Al Kowshik
+date: October 2, 2023
+output: html_document
+---
+
+
+```{r, message=FALSE}
+library(tidyverse)
+```
+
+
+
+```{r}
+load("crimedata_20221001.Rda")
+```
+
+
+
+```{r}
+CrimeOct5 <- crimedata %>% 
+  filter(MONTH == 10, DAY == 5, YEAR == 2021)
+summarize(CrimeOct5, n())
+```
+
+
+
+```{r}
+ByType <- CrimeOct5 %>%
+  group_by(TYPE) %>%
+  summarize(N = n())
+ByType
+
+# here is a bar/column plot with x and y defined as given in the question. 
+# to make it easier to read, we're ordering the categories from largest to smallest.
+p <- ggplot(ByType, mapping = aes(x=N, y=reorder(TYPE, N)))
+p + geom_col() +
+ labs(title = "Figure 1: Frequency of crimes on October 5 2021",
+        x = "Number of incidents",
+        y = "Type of incident")
+
+
+# here is the same plot created using coord_flip()
+p <- ggplot(ByType, mapping = aes(x=reorder(TYPE, N), y=N))
+p + geom_col() + coord_flip() +
+ labs(title = "Figure 1: Frequency of crimes on October 5 2021",
+        x = "Type of incident",
+        y = "Number of incidents")
+
+# here is the same plot, as a Cleveland dot plot
+p + geom_point() + coord_flip() +
+ labs(title = "Figure 1: Frequency of crimes on October 5 2021",
+        x = "Type of incident",
+        y = "Number of incidents")
+```
+
+
+
+```{r}
+CrimeOct5 %>%
+  group_by(NEIGHBOURHOOD) %>%
+  summarize(N = n())
+```
+
+
+
+```{r}
+p <- CrimeOct5 %>%
+  filter(NEIGHBOURHOOD == "Central Business District") %>%
+  group_by(TYPE) %>%
+  summarize(N = n()) %>%
+  ggplot(ByType, mapping = aes(x=reorder(TYPE, N), y=N))
+
+p + geom_point() + coord_flip() +
+ labs(title = "Figure 2: Frequency of crimes on October 5 2021",
+      subtitle = "Neighbourhood: Central Business District",
+        x = "Type of incident",
+        y = "Number of incidents")
+```
+
+
+
+```{r}
+# First, let's subset the data to focus on the 2012-2021 period, and two crimes of interest
+Fig2Data <- crimedata %>% 
+  filter(YEAR>= 2012 & YEAR <= 2021, 
+         TYPE == "Offence Against a Person" | TYPE == "Theft of Bicycle" ) %>%
+  # now compute means by YEAR and TYPE
+  group_by(YEAR, TYPE) %>%
+  summarize(N = n())
+
+# When doing any reasonably complex data manipulation it's a good idea to check your work. 
+# Here are a couple of quick checks to see if things look right.
+
+# 1. If we've done that correctly, Fig2Data should only have counts for those two crimes, in each year 2012-2021.
+# That's easy to verify:
+Fig2Data
+
+# 2. Another sanity check is to add up those YEAR x TYPE totals by TYPE, and see if they match totals by TYPE 
+# based on the original data:
+Fig2Data %>% group_by(TYPE) %>% summarize(sum(N))
+crimedata %>% filter(YEAR >= 2012 & YEAR <=2021) %>% group_by(TYPE) %>% summarize(n())
+
+# Everything looks good, so let's generate the plot. We'll make a dot plot with connected lines, and then overlay
+# a single smooth line for the overall trend.
+p <- Fig2Data %>% 
+  ggplot(mapping = aes(x = YEAR, y = N))
+p + geom_point(mapping = aes(color = TYPE)) +
+  geom_line(mapping = aes(color = TYPE)) +
+  geom_smooth(se = FALSE) + 
+  labs(title = "Figure 3: Crime Trends, 2012-2021",
+       subtitle = "Offences against a person vs. bicycle thefts",
+       x = "Year",
+       y = "Number of incidents",
+       color = "Type of incident:",
+       caption = "Note: dark blue line is smoothed estimate of overall trend") +
+  theme(legend.position = "top")
+```
+
+Trends for these two crimes are quite different! Offences against a person initially declined about 16% between 2012 and 2014, then were flat until 2018 before increasing back to their 2012 level by 2020. In contrast, bicycle thefts increased dramatically (more than 68%) after 2012, reaching a peak in 2015. They have been declining since that peak, and in 2021 they fell back below their 2012 level. Because these two crimes follow almost opposite trends, the overall trend (in dark blue) is essentially flat over the 2012-2020 period.

@@ -1,0 +1,126 @@
+---
+title: "VPD vs Holiday vs Weather Data Analysis"
+author: "Amir Al Kowshik"
+date: "11/6/2023"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r, message=FALSE}
+library(tidyverse)
+library(lubridate)
+
+crimes <- read_csv("crimedata_csv_AllNeighbourhoods_AllYears.csv") %>%
+  filter(YEAR >= 2006 & YEAR <= 2021) %>%
+  mutate(date = make_date(YEAR,MONTH,DAY)) %>%
+  group_by(date, TYPE) %>%
+  summarize(count = n()) %>%
+  pivot_wider(names_from = TYPE, values_from = count) %>%
+  replace(is.na(.),0)
+
+library(vtable)
+sumtable(crimes)
+
+p <- crimes %>%
+  pivot_longer(-date, names_to = "TYPE", values_to = "count") %>%
+  mutate(Year = year(date)) %>%
+  group_by(Year, TYPE) %>%
+  summarise(Avg = mean(count)) %>%
+  ggplot(aes(x = Year, y = Avg, color = TYPE))
+p + geom_line() +
+  scale_x_continuous(breaks = c(2006:2021)) +
+  theme(axis.text.x = element_text(angle = 90)) + 
+  labs(title = "Annual Average Daily Crimes",
+       y = "Average Daily Crimes")
+```
+
+
+```{r, message=FALSE}
+crimes2 <- read_csv("BCholidays.csv") %>%
+  mutate(date = make_date(YEAR, MONTH, DAY)) %>%
+  select(date, holidayname) %>%
+  right_join(crimes, by = "date") %>%
+  mutate(holiday = !is.na(holidayname)) 
+
+crimes3 <- read_csv("weatherstats_vancouver_daily.csv") %>%
+  select(date, max_temperature, min_temperature, avg_temperature, precipitation) %>%
+  right_join(crimes2, by = "date") %>%
+  mutate(DayOfWeek = factor(wday(date, label = TRUE), ordered = FALSE),
+         Month = factor(month(date,label = TRUE), ordered = FALSE))
+
+crimes3 %>% filter(holiday == TRUE) %>% sumtable()
+```
+
+
+
+
+```{r, message=FALSE}
+library(modelr)
+library(broom)
+
+crimes3 %>%
+  ggplot(mapping = aes(x = max_temperature,y = Mischief)) +
+  geom_point(alpha = 0.1) + 
+  geom_smooth(method="lm") +
+  coord_cartesian(ylim=c(0,50)) +
+  labs(title = "Mischief vs. Maximum Daily Temperature",
+       y = "Daily Incidents",
+       x = "Maximum Daily Temperature")
+
+crimes3 %>%
+  ggplot(mapping = aes(x = min_temperature,y = Mischief)) +
+  geom_point(alpha = 0.1) + 
+  geom_smooth(method="lm") +
+  coord_cartesian(ylim=c(0,50)) +
+  labs(title = "Mischief vs. Minimum Daily Temperature",
+       y = "Daily Incidents",
+       x = "Minimum Daily Temperature")
+
+crimes3 %>%
+  ggplot(mapping = aes(x = avg_temperature,y = Mischief)) +
+  geom_point(alpha = 0.1) + 
+  geom_smooth(method="lm") +
+  coord_cartesian(ylim=c(0,50)) +
+  labs(title = "Mischief vs. Average Daily Temperature",
+       y = "Daily Incidents",
+       x = "Average Daily Temperature")
+
+crimes3 %>%
+  ggplot(mapping = aes(x = precipitation,y = Mischief)) +
+  geom_point(alpha = 0.1) + 
+  geom_smooth(method="lm") +
+  coord_cartesian(ylim=c(0,50)) +
+  labs(title = "Mischief vs. Precipitation",
+       y = "Daily Incidents",
+       x = "Precipitation")
+
+fit1 <- lm(Mischief ~ max_temperature, data=crimes3)
+fit2 <- lm(Mischief ~ max_temperature + DayOfWeek + Month + holiday, data=crimes3)
+
+crime_models <- crimes3 %>%
+  add_residuals(fit1, var="m1residuals") %>%
+  add_residuals(fit2, var="m2residuals")
+
+msfe <- crime_models %>%
+summarize(MSFE1 = mean(m1residuals^2, na.rm=TRUE),
+          MSFE2 = mean(m2residuals^2, na.rm=TRUE))
+
+msfe
+
+tidyresults <- tidy(fit2, conf.int=TRUE)
+
+tidyresults %>% 
+  filter(term != "(Intercept)") %>%
+  ggplot(aes(x=term, y=estimate, ymin=conf.low, ymax=conf.high)) + 
+  geom_hline(yintercept = 0, color = "red") +
+  geom_pointrange() + 
+  coord_flip() + 
+  labs(x="", y="OLS Estimates")
+    
+
+```
+

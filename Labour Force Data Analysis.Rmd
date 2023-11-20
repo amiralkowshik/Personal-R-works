@@ -1,0 +1,126 @@
+---
+title: "Labour Force Data Analysis"
+author: Amir Al Kowshik
+date: October 10, 2023
+output: html_document
+---
+
+
+```{r, message=FALSE}
+library(tidyverse)
+```
+
+
+
+```{r, cache=TRUE}
+LFS <- read_csv("pub0922.csv")
+```
+
+
+
+```{r, cache=TRUE}
+LFS <- read_csv("pub0922.csv", guess_max = 10000)
+```
+
+
+
+```{r}
+LFS <- LFS %>% 
+  mutate(LFStatus = if_else(LFSSTAT == 1, "Employed, at work", ""),
+         LFStatus = if_else(LFSSTAT == 2, "Employed, absent from work", LFStatus),
+         LFStatus = if_else(LFSSTAT == 3, "Unemployed", LFStatus),
+         LFStatus = if_else(LFSSTAT == 4, "Not in labour force", LFStatus))
+```
+
+
+```{r, message = FALSE}
+LFS %>% group_by(LFSSTAT, LFStatus) %>% summarise(n())
+```
+
+
+```{r}
+p <- LFS %>% ggplot(mapping = aes(x = LFStatus))
+
+p + geom_bar(mapping = aes(y = ..prop.., group = 1)) +
+  labs(x = "Labour Force Status",
+       y = "Proportion of respondents",
+       title = "Distribution of Labor Force Status, September 2022",
+       caption = "Source: LFS PUMF, September 2022")
+
+```
+
+
+
+```{r, message=FALSE}
+LFS <- LFS %>% 
+  mutate(ImmmigType = if_else(IMMIG == 1, "Immigrant, landed 10 or less years earlier", ""),
+         ImmmigType = if_else(IMMIG == 2, "Immigrant, landed more than 10 years earlier", ImmmigType),
+         ImmmigType = if_else(IMMIG == 3, "Non-immigrant", ImmmigType))
+
+
+LFS %>% group_by(ImmmigType, IMMIG) %>% summarise(n())
+
+
+p <- LFS %>% ggplot(mapping = aes(x = ImmmigType, fill = LFStatus))
+p + geom_bar(position = "fill") + 
+  coord_flip() +
+  theme(legend.position = "top") +
+  labs(x = "Immigrant type",
+       y = "Proportion",
+       fill = "Labor Force Status",
+       title = "Distribution of Labor Force Status, by Immigrant Type",
+       caption = "Source: LFS PUMF, September 2022")
+
+
+p <- LFS %>% ggplot(mapping = aes(x = LFStatus, fill = ImmmigType))
+p + geom_bar(position = "dodge",
+             mapping = aes(y = ..prop.., group = ImmmigType)) + 
+  coord_flip() +
+  theme(legend.position = "top") +
+  labs(x = "Labor Force Status",
+       fill = "Immigrant type",
+       title = "Distribution of Labor Force Status, by Immigrant Type",
+       caption = "Source: LFS PUMF, September 2022")
+```
+
+
+```{r}
+FTEmployed <- LFS %>%
+  filter(LFSSTAT == 1 & FTPTMAIN == 1)
+
+# a) a histogram. Note this variable has an "implied decimal" so I'm dividing by 10 get a measure in hours
+p <- FTEmployed %>% 
+  ggplot(mapping = aes(x = AHRSMAIN/10)) 
+p + geom_histogram(binwidth = 1) +
+  labs(x = "Actual Hours Worked per Week",
+       y = "Number of respondents",
+       title = "Distribution of Actual Hours Worked",
+       subtitle = "Full-time employed",
+       Caption = "Source: LFS PUMF, September 2022")
+```
+
+
+```{r}
+# b) now, a density plot
+p <- FTEmployed %>% 
+  ggplot(mapping = aes(x = AHRSMAIN/10)) 
+p + geom_density() +
+  labs(x = "Actual Hours Worked per Week",
+       y = "Number of respondents",
+       title = "Distribution of Actual Hours Worked",
+       subtitle = "Full-time employed",
+       Caption = "Source: LFS PUMF, September 2022")
+```
+
+
+```{r}
+# c) Finally, the box plot
+p <- FTEmployed %>% 
+  ggplot(mapping = aes(x = AHRSMAIN/10)) 
+p + geom_boxplot() +
+  labs(x = "Actual Hours Worked per Week",
+       y = "Number of respondents",
+       title = "Distribution of Actual Hours Worked",
+       subtitle = "Full-time employed",
+       Caption = "Source: LFS PUMF, September 2022")
+```
